@@ -1921,6 +1921,51 @@ def g:Test_CompletionAllServers_AutoComplete()
   g:LspOptionsSet({completionAllServers: false})
   buf.BufLspServerRemove(bufnr(), srv1)
   buf.BufLspServerRemove(bufnr(), srv2)
+
+  :%bw!
+enddef
+
+# Test for showing the references with an asynchronous request
+def g:Test_ShowReferences_AsyncReply()
+  :%bw!
+  silent! edit XShowReferences.txt
+  setline(1, ['foo', 'bar foo'])
+  var lspserver = MakeTestLspServer([])
+  lspserver.isReferencesProvider = true
+  lspserver.needOffsetEncoding = false
+  var Reply: func
+  lspserver.rpc_a = (method, params, Cbfunc) => {
+    assert_equal('textDocument/references', method)
+    assert_equal({includeDeclaration: true}, params.context)
+    Reply = Cbfunc
+    return 1
+  }
+  var uri = util.LspBufnrToUri(bufnr())
+  var refs = [
+    {uri: uri, range: {start: {line: 0, character: 0}, end: {line: 0, character: 3}}},
+    {uri: uri, range: {start: {line: 1, character: 4}, end: {line: 1, character: 7}}}]
+
+  # The location list is created for the window where the references were
+  # requested, even if another window is the current window when the reply
+  # is received.
+  var winid = win_getid()
+  lspserver.showReferences(false)
+  :new
+  var otherWinid = win_getid()
+  Reply(lspserver, refs->deepcopy(), {})
+  assert_equal([], getloclist(otherWinid))
+  assert_equal('Symbol References', getloclist(winid, {title: 0}).title)
+  assert_equal([[1, 1], [2, 5]],
+	       getloclist(winid)->mapnew((_, v) => [v.lnum, v.col]))
+  :lclose
+  win_execute(winid, 'lclose')
+
+  # No references
+  :messages clear
+  lspserver.showReferences(false)
+  Reply(lspserver, null, {})
+  assert_match('No references found', execute('messages'))
+
   :%bw!
 enddef
 
