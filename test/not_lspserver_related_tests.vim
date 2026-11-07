@@ -463,6 +463,66 @@ def g:Test_OmniComplete_TextEditRangeBeforeKeyword()
   g:LspOptionsSet({completionMatcher: 'case'})
 enddef
 
+# Test for omni completion when the reply from the language server arrives
+# after the omni completion function is called
+def g:Test_OmniComplete_AsyncReply()
+  silent! edit XOmniCompleteAsyncReply.txt
+  setlocal filetype=text
+  setlocal omnifunc=g:LspOmniFunc
+  setlocal completeopt=menuone,noinsert
+  setline(1, ['foo.'])
+  var lspserver = AttachCompletionStubServer(9104, [])
+  lspserver.getCompletion = (_, _) => {
+    timer_start(20, (_) => {
+      completion.CompletionReply(lspserver, [{label: 'bar'}, {label: 'baz'}], {})
+    })
+  }
+  inoremap <buffer> <F3> <ScriptCmd>g:LspTestWords = complete_info(['items']).items->mapnew((_, v) => v.word)<CR>
+  g:LspTestWords = []
+  feedkeys("A\<C-X>\<C-O>\<F3>\<C-E>\<Esc>", 'xt')
+  assert_equal(['bar', 'baz'], g:LspTestWords)
+  unlet g:LspTestWords
+  buf.BufLspServerRemove(bufnr(), lspserver)
+  :%bw!
+enddef
+
+# Test for a snippet completion item inserted as plain text
+def g:Test_Completion_SnippetAsPlainText()
+  silent! edit XCompletionSnippet.txt
+  setline(1, ['x'])
+  cursor(1, 2)
+  var lspserver = {
+    name: 'test',
+    omniCompletePending: true,
+    completionLazyDoc: false,
+    completeItems: [],
+    completeItemsIsIncomplete: false,
+  }
+  var snippets = {
+    'v-if="$1"': 'v-if=""',
+    'v-for="${1:value} in ${2:source}"': 'v-for="value in source"',
+    'foo(${1:a}, ${2:${3:b}})$0': 'foo(a, b)',
+    '${1|one,two|} \$x \} \\': 'one $x } \',
+    '${TM_FILENAME:file} $TM_LINE_NUMBER': 'file ',
+  }
+  completion.CompletionReply(lspserver, snippets->keys()->mapnew((_, v) => ({
+    label: 'x', insertText: v, insertTextFormat: 2})), {})
+  assert_equal(snippets->values()->sort(),
+	       lspserver.completeItems->mapnew((_, v) => v.word)->sort())
+
+  # textEdit with a snippet
+  :%bw!
+  silent! edit XOmniCompleteSnippet.vue
+  setlocal omnifunc=g:LspOmniFunc
+  setline(1, ['  <p v-i'])
+  var srv = AttachCompletionStubServer(9105,
+    [TextEditItem('v-if', 'v-if="$1"', 0, 5, 8)->extend({insertTextFormat: 2})])
+  feedkeys("A\<C-X>\<C-O>", 'xt')
+  assert_equal('  <p v-if=""', getline(1))
+  buf.BufLspServerRemove(bufnr(), srv)
+  :%bw!
+enddef
+
 # Only here to because the test runner needs it
 def g:StartLangServer(): bool
   return true
