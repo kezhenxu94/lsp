@@ -1084,17 +1084,10 @@ def OmniCompleteAllServers(lspservers: list<dict<any>>, findstart: number,
   endif
 
   # Wait for the list of matches from the LSP servers.  The start of the
-  # completion depends on the textEdit range of the items.
+  # completion depends on the textEdit range of the items.  Don't use
+  # complete_check() here (see g:LspOmniFunc()).
   var count: number = 0
   while CompletionAllServersPending() && count < 1000
-    if complete_check()
-      for lspserver in allServersCompletion
-	lspserver.omniCompletePending = false
-	lspserver.completeItems = []
-      endfor
-      allServersCompletion = []
-      return -3
-    endif
     sleep 2m
     count += 1
   endwhile

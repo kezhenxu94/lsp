@@ -1864,6 +1864,41 @@ def g:Test_CompletionAllServers_TextEditRange()
   :%bw!
 enddef
 
+# Test for the "completionAllServers" option with omni completion when the
+# replies arrive after the omni completion function is called
+def g:Test_CompletionAllServers_AsyncReply()
+  g:LspOptionsSet({autoComplete: false, omniComplete: true,
+		   completionAllServers: true})
+  silent! edit XCompletionAllServersAsync.txt
+  setlocal filetype=text
+  setlocal omnifunc=g:LspOmniFunc
+  setlocal completeopt=menuone,noinsert
+  setline(1, 'x.')
+  var resolved: list<dict<any>> = []
+  var srv1 = MakeCompletionServer('srv1', [], resolved)
+  var srv2 = MakeCompletionServer('srv2', [], resolved)
+  srv1.getCompletion = (_, _) => {
+    timer_start(20, (_) => completion.CompletionReply(srv1, [{label: 'bar'}], {}))
+  }
+  srv2.getCompletion = (_, _) => {
+    timer_start(40, (_) => completion.CompletionReply(srv2, [{label: 'baz'}], {}))
+  }
+  buf.BufLspServerSet(bufnr(), srv1)
+  buf.BufLspServerSet(bufnr(), srv2)
+
+  inoremap <buffer> <F3> <ScriptCmd>g:LspTestWords = complete_info(['items']).items->mapnew((_, v) => v.word)<CR>
+  g:LspTestWords = []
+  feedkeys("A\<C-X>\<C-O>\<F3>\<C-E>\<Esc>", 'xt')
+  assert_equal(['bar', 'baz'], g:LspTestWords)
+  unlet g:LspTestWords
+
+  g:LspOptionsSet({autoComplete: true, omniComplete: false,
+		   completionAllServers: false})
+  buf.BufLspServerRemove(bufnr(), srv1)
+  buf.BufLspServerRemove(bufnr(), srv2)
+  :%bw!
+enddef
+
 # Test for the "completionAllServers" option with auto completion
 def g:Test_CompletionAllServers_AutoComplete()
   g:LspOptionsSet({completionAllServers: true})
