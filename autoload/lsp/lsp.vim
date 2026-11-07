@@ -927,6 +927,10 @@ export def FastShutdownExitAllServers()
   for ftype in ftypeServerMap->keys()
     for lspserver in FtypeServersAll(ftype)
       if lspserver.running
+	# Like Neovim's detached servers: don't kill the server when Vim exits,
+	# a busy server (e.g. jdtls importing a project) must still process the
+	# shutdown/exit messages to save its state.
+	lspserver.job->job_setoptions({stoponexit: ''})
 	FastShutdownServer(lspserver)
 	lspserver.exitServer()
 	lspserver.running = false
